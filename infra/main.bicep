@@ -91,9 +91,15 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         configuration: {
             ingress: {
                 external: true
-                targetPort: 80
+                targetPort: 8080
                 transport: 'auto'
             }
+            registries: [
+                {
+                    server: acr.properties.loginServer
+                    identity: 'system'
+                }
+            ]
         }
         template: {
             containers: [
