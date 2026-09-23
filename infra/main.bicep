@@ -4,6 +4,9 @@ param namePrefix string = 'certify'
 
 param containerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
+@secure()
+param adminApiKey string
+
 var uniqueSuffix = uniqueString(resourceGroup().id)
 
 var acrName = '${namePrefix}acr${uniqueSuffix}'
@@ -101,6 +104,20 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
                         cpu: json('0.25')
                         memory: '0.5Gi'
                     }
+                    env: [
+                        {
+                            name: 'STORAGE_ACCOUNT_NAME'
+                            value: storage.name
+                        }
+                        {
+                            name: 'CONTAINER_NAME'
+                            value: 'certificates'
+                        }
+                        {
+                            name: 'ADMIN_API_KEY'
+                            value: adminApiKey
+                        }
+                    ]
                 }
             ]
             scale: {
