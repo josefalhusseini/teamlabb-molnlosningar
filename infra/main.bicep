@@ -44,5 +44,32 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     }
 }
 
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+    name: '${namePrefix}-logs'
+    location: location
+    properties: {
+        sku: {
+            name: 'PerGB2018'
+        }
+        retentionInDays: 30
+    }
+}
+
+
+resource containerEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
+    name: '${namePrefix}-env'
+    location: location
+    properties: {
+        appLogsConfiguration: {
+            destination: 'log-analytics'
+            logAnalyticsConfiguration: {
+                customerId: logAnalytics.properties.customerId
+                sharedKey: logAnalytics.listKeys().primarySharedKey
+            }
+        }
+    }
+}
 
 output acrLoginServer string = acr.properties.loginServer
+
+output logAnalyticsWorkspaceId string = logAnalytics.id
