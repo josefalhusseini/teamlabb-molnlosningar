@@ -10,6 +10,10 @@ var acrName = '${namePrefix}acr${uniqueSuffix}'
 
 var storageName = 'st${uniqueSuffix}'
 
+var acrPullRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+var storageBlobContributorRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+
+
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
     name: acrName
     location: location
@@ -108,6 +112,26 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     }
 }
 
+resource acrPullAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+    scope: acr
+    name: guid(acr.id, containerApp.id, acrPullRoleId)
+    properties: {
+        roleDefinitionId: acrPullRoleId
+        principalId: containerApp.identity.principalId
+        principalType: 'ServicePrincipal'
+    }
+}
+
+resource blobContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+    scope: storage
+    name: guid(storage.id, containerApp.id, storageBlobContributorRoleId)
+    properties: {
+        roleDefinitionId: storageBlobContributorRoleId
+        principalId: containerApp.identity.principalId
+        principalType: 'ServicePrincipal'
+    } 
+}
+
 
 
 
@@ -118,3 +142,5 @@ output acrLoginServer string = acr.properties.loginServer
 output logAnalyticsWorkspaceId string = logAnalytics.id
 
 output containerAppUrl string = containerApp.properties.configuration.ingress.fqdn
+
+output storageAccountName string = storage.name
