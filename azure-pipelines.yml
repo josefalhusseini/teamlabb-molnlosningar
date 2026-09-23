@@ -25,3 +25,12 @@ steps:
     inputs:
       command: test
       projects: '**/*Tests.csproj'
+
+  - task: AzureCLI@2
+    displayName: 'Build and push image to ACR'
+    inputs:
+      azureSubscription: 'azure-connection'
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        az acr build --registry $(acrName) --image $(imageName):$(Build.BuildId) --image $(imageName):latest --file Dockerfile .
