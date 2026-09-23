@@ -2,6 +2,8 @@ param location string = resourceGroup().location
 
 param namePrefix string = 'certify'
 
+param containerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+
 var uniqueSuffix = uniqueString(resourceGroup().id)
 
 var acrName = '${namePrefix}acr${uniqueSuffix}'
@@ -70,6 +72,49 @@ resource containerEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
     }
 }
 
+
+resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
+    name: '${namePrefix}-api'
+    location: location
+    identity: {
+        type: 'SystemAssigned'
+    }
+    properties: {
+        managedEnvironmentId: containerEnv.id
+        configuration: {
+            ingress: {
+                external: true
+                targetPort: 80
+                transport: 'auto'
+            }
+        }
+        template: {
+            containers: [
+                {
+                    name: 'api'
+                    image: containerImage
+                    resources: {
+                        cpu: json('0.25')
+                        memory: '0.5Gi'
+                    }
+                }
+            ]
+            scale: {
+                minReplicas: 2
+            }
+            
+            
+        }
+    }
+}
+
+
+
+
+
+
 output acrLoginServer string = acr.properties.loginServer
 
 output logAnalyticsWorkspaceId string = logAnalytics.id
+
+output containerAppUrl string = containerApp.properties.configuration.ingress.fqdn
