@@ -34,3 +34,12 @@ steps:
       scriptLocation: inlineScript
       inlineScript: |
         az acr build --registry $(acrName) --image $(imageName):$(Build.BuildId) --image $(imageName):latest --file Dockerfile .
+
+  - task: AzureCLI@2
+    displayName: 'Deploy to Container Apps'
+    inputs:
+      azureSubscription: 'azure-connection'
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        az containerapp update --name $(containerAppName) --resource-group $(resourceGroup) --image $(acrName).azurecr.io/$(imageName):$(Build.BuildId)
