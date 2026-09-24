@@ -16,8 +16,7 @@ var containerName = Environment.GetEnvironmentVariable("CONTAINER_NAME")
                     ?? "certificates";
 
 var apiKey = Environment.GetEnvironmentVariable("ADMIN_API_KEY") 
-             ?? builder.Configuration["AdminApiKey"] 
-             ?? "certify-secret-key";
+             ?? builder.Configuration["AdminApiKey"];
 
 BlobContainerClient? containerClient = null;
 
@@ -54,8 +53,7 @@ app.MapPost("/certificates", async (CertificateRequest request, HttpContext cont
     var id = Guid.NewGuid().ToString();
     var issueDate = request.IssueDate == default ? DateTime.UtcNow : request.IssueDate;
     var host = context.Request.Host.Value;
-    var scheme = context.Request.Scheme;
-    var verificationUrl = $"{scheme}://{host}/verify/{id}";
+    var verificationUrl = $"https://{host}/verify/{id}";
 
     var certificate = new Certificate(id, request.RecipientName, request.CourseName, issueDate, verificationUrl);
 
@@ -147,7 +145,7 @@ app.MapGet("/verify/{uuid}", async (string uuid) =>
 
 app.MapGet("/certificates", async (HttpRequest request) =>
 {
-    if (!request.Headers.TryGetValue("X-Api-Key", out var providedKey) || providedKey != apiKey)
+    if (string.IsNullOrEmpty(apiKey) || !request.Headers.TryGetValue("X-Api-Key", out var providedKey) || providedKey != apiKey)
     {
         return Results.Unauthorized();
     }
