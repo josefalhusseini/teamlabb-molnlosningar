@@ -172,7 +172,7 @@ Talare: Hilal. Svara på grundarens fråga rakt: det kostar nästan inget, och v
 
 ---
 
-## VG: drift och designval
+## Drift och designval
 
 - **Autoskalning:** HTTP-regel, `concurrentRequests: 10`, max 5 repliker
 - **Parametriserad Bicep:** `main.dev.bicepparam` 1 till 2 repliker, `main.prod.bicepparam` 2 till 5
