@@ -183,3 +183,5 @@ app.Run();
 public record CertificateRequest(string RecipientName, string CourseName, DateTime IssueDate);
 public record Certificate(string Id, string RecipientName, string CourseName, DateTime IssueDate, string VerificationUrl);
 public record VerificationResult(bool IsValid, string CertificateId, string RecipientName, string CourseName, DateTime IssueDate, DateTime VerifiedAt);
+
+public partial class Program { }
