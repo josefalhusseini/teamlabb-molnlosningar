@@ -13,6 +13,9 @@ var acrName = '${namePrefix}acr${uniqueSuffix}'
 
 var storageName = 'st${uniqueSuffix}'
 
+param minReplicas int = 2
+param maxReplicas int = 5
+
 var acrPullRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var storageBlobContributorRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
 
@@ -127,8 +130,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
                 }
             ]
             scale: {
-                minReplicas: 2
-                maxReplicas: 5
+                minReplicas: minReplicas
+                maxReplicas: maxReplicas
                 rules: [
                     {
                         name: 'http-scaling'
