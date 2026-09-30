@@ -1,35 +1,45 @@
-# ARCHITECTURE.md — Teknisk reflektion & Arkitektur (Certify AB)
+# ARCHITECTURE.md
 
-## 1. Container Apps vs AKS
-Vi har valt Azure Container Apps framför Azure Kubernetes Service (AKS) eftersom vår workload för Certify AB består av ett mikrotjänst-API med varierande och händelsestyrd trafik. Container Apps körs på en serverless Consumption-plan där Azure hanterar klusterinfrastruktur, nodskalning, ingress-routing och certifikat helt abstraherat, vilket minimerar underhåll och driftskostnader. Begränsningen med Container Apps är att vi inte har direkt tillgång till underliggande Kubernetes-primitiver som DaemonSets, anpassade CNI-nätverksinställningar eller avancerad service mesh. Vi skulle välja AKS om Certify växte till ett stort ekosystem med dussintals mikrotjänster som kräver strikt nätverksisolering, dedikerade GPU-resurser eller multi-cloud portabilitet där ett eget driftteam finns på plats.
+Teknisk reflektion och arkitektur för Certify AB, scenario D.
 
-## 2. CI/CD Pipeline
-Vårt pipeline-flöde i Azure DevOps triggas automatiskt vid push till `main`-branchen. Först körs ett byggsteg (`DotNetCoreCLI@2`) som återställer NuGet-paket och kompilerar .NET 8-källkoden i Release-konfiguration. Därefter körs `AzureCLI@2` som instruerar Azure Container Registry (ACR) att bygga vår multi-stage `Dockerfile` och pusha två taggar (`BuildId` och `latest`). I det avslutande steget anropas `az containerapp update` via en service connection för att driftsätta den nybyggda imagen till vår Container App. Om ett steg (t.ex. kompileringen eller imagebygget) misslyckas, avbryts pipelinen omedelbart med röd status; den befintliga live-revisionen i Azure Container Apps fortsätter då att köra helt opåverkad, vilket garanterar noll driftstopp för användarna.
+## 1. Container Apps
 
-## 3. Infrastruktur som kod (IaC) & Idempotens
-Vi definierar hela vår infrastruktur i Bicep istället för att klicka i Azure Portal för att säkerställa spårbarhet, versionshantering och reproducerbarhet mellan miljöer. Med Bicep kan en identisk miljö rullas ut automatiskt utan mänskliga misstag, felkonfigurerade portar eller bortglömda behörigheter. Idempotens innebär att en deployment kan köras hur många gånger som helst mot samma resursgrupp och alltid resultera i exakt samma önskade tillstånd. Om en resurs redan finns och stämmer överens med Bicep-definitionen ändrar Azure ingenting, vilket gör driftsättningar säkra och förutsägbara.
+Vi deployar till Container Apps eftersom det bara finns ett API, så det behöver inte den frihet som man har med AKS i detta fall. Det är ett nytt bolag så det finns inte ett team som kan ha koll på AKS. Container Apps är redan tillräckligt bra när det kommer till att hantera mängder av trafik och skalning. När vi väljer Container Apps och inte AKS så får vi ett färdigt paket med resurser från Azure, så när det kommer till att till exempel köra https hela vägen går det inte, för Azure sköter den delen och skickar då http till API:t. Vi skulle då välja AKS när vi har ett team som kan hålla koll på AKS, och när vi har flera tjänster.
 
-## 4. Säkerhet & Hemlighetshantering
-Vi eliminerar riskerna för läckta autentiseringsuppgifter genom att använda Azure Managed Identity istället för hårdkodade lösenord eller anslutningssträngar. Vår Container App har en System-Assigned identitet som via Azure RBAC tilldelats rollen *Storage Blob Data Contributor* direkt på vårt Storage Account, och koden använder `DefaultAzureCredential` för att begära kortlivade tokens. För känsliga miljövariabler, såsom `ADMIN_API_KEY`, injiceras värdet via säkra Bicep-parametrar och pipelines utan att exponeras i git. Om en hemlig nyckel av misstag skulle hamna i git-historiken betraktas den omedelbart som komprometterad och måste roteras i Azure samt raderas ur git-historiken via t.ex. `git filter-repo`.
+## 2. CI/CD
 
-## 5. Ekonomi & Skalbarhet
+Först triggas pipelinen när man pushar till main, då den har trigger på main-branchen. Sedan byggs koden, och efter att koden byggts körs testerna. Sedan byggs en image som pushas till ACR och till sist deployas imagen till Container Apps. Detta är flödet för en ren, felfri pipeline. Men om det någonstans blir fel i processen så körs inte nästa delar förrän man fixat det och kör om pipelinen. Om man redan har en app live så påverkas den inte, då den kör på en fungerande image, och så fort den nya blir fungerande så blir den live istället. Testerna kontrollerar att `/health` svarar och att ett påhittat certifikat aldrig godkänns av `/verify`.
 
-### Kostnad vid lansering (40 kunder, ~8 000 certifikat/månad)
-* **Azure Container Apps:** ~0 SEK/mån (ingår i den kostnadsfria kvoten på 180 000 vCPU-sekunder och 360 000 GiB-sekunder per månad).
-* **Azure Container Registry (Basic):** ~17 SEK/mån (fast avgift på ca 0.55 SEK/dag).
-* **Azure Blob Storage (Standard LRS, Hot):** ~2 SEK/mån (~8 000 JSON-filer motsvarar under 5 MB data och 8 000 skrivanrop).
-* **Log Analytics Workspace:** ~0 SEK/mån (under gratiskvoten på 5 GB/månad).
-* **Total månadskostnad vid lansering:** **~20–25 SEK/månad**. Intäkten från 40 kunder à 99 kr är 3 960 kr/mån, vilket ger en bruttomarginal på över 99 %.
+## 3. IaC
 
-### Kostnad om kundbasen tredubblas (120 kunder, ~24 000 certifikat/månad)
-* ACR och Storage Account skalar linjärt; Storage-kostnaden ökar marginellt till ca 5 SEK/månad.
-* Container Apps ryms fortfarande till stor del inom gratiskvoten vid normal belastning.
-* **Total månadskostnad vid 3x:** **~25–35 SEK/månad**.
+Bicep används för att bygga det man behöver en gång och sedan kunna återanvända det. Om man till exempel behöver dev, prod och test så kan man bygga alla på samma sätt med en fil istället för att behöva klicka sig igenom samma resurser tre olika gånger. Det blir också mindre chans att bli fel än när man själv klickar sig igenom allt. Idempotens betyder att om man kör samma sak flera gånger så får man samma resultat, och det händer inget nytt om man inte ändrar på något. När man kör mallen flera gånger behöver man därför inte tänka på vad som redan finns. Rollerna får alltid samma guid så det är alltid samma id, och guid gäller bara för roller då resurser har fasta namn. Azure jämför den nya mallen med det som redan finns och ändrar bara det som är nytt.
 
-### Dyrast resurs och motivering
-Azure Container Registry (ACR) på Basic SKU är vår enskilt dyraste fasta resurs i denna fas (~17 SEK/månad). Skälet är att ACR har en fast dygnsavgift oavsett om man pushar nya images eller inte, till skillnad från Container Apps och Blob Storage som är rena serverless pay-as-you-go-tjänster i vila.
+## 4. Säkerhet
 
-### Flaskhals och hantering av viral last (10 000 anrop på en dag)
-Om en certifikatlänk delas viralt på sociala medier och anropas 10 000 gånger på en dag uppstår flaskhalsen i vår Container App och antalet läsanrop mot Blob Storage. 10 000 extra läsanrop mot Blob Storage kostar dock under 0.05 SEK, och Container Apps skalar automatiskt upp antalet replicas för att möta trafiken. 
+Vi eliminerar riskerna för läckta autentiseringsuppgifter genom att använda Azure Managed Identity istället för hårdkodade lösenord eller anslutningssträngar. Vår Container App har en System-Assigned identitet som via Azure RBAC tilldelats rollen *Storage Blob Data Contributor* direkt på vårt Storage Account, och koden använder `DefaultAzureCredential` för att begära kortlivade tokens. Känsliga värden, såsom `ADMIN_API_KEY`, skickas in som en säker Bicep-parameter (`@secure()`) som läses från en miljövariabel vid deploy, så värdet aldrig står i git eller syns i deployment-historiken. Om en hemlig nyckel av misstag skulle hamna i git-historiken betraktas den omedelbart som komprometterad och måste roteras i Azure samt raderas ur git-historiken via till exempel `git filter-repo`.
 
-För att skydda systemet och förhindra att databasen eller containrarna överbelastas om anropen skenar till miljoner, bör en caching-mekanism (t.ex. Azure Front Door / CDN) placeras framför `/verify/{uuid}`. Eftersom ett utfärdat certifikat är oföränderligt kan verifieringssvaret cachas med HTTP-headers (`Cache-Control: public, max-age=86400`), vilket avlastar infrastrukturen helt och håller kostnaden nära noll.
+## Ekonomi
+
+Priser från Azures priskalkylator, region Sweden Central, i SEK.
+
+| Resurs | Beräkning | Kr/mån |
+|---|---|---|
+| Container Apps | 2 repliker × 0,25 vCPU × 0,5 GiB dygnet runt, minus gratiskvot | ≈ 319 |
+| Container Registry | Basic, fast pris | 47,58 |
+| Blob Storage | 1 GB, 8 000 skrivningar och läsningar | ≈ 1 |
+| Log Analytics | under 5 GB gratis per månad | 0 |
+| **Totalt** | | **≈ 367** |
+
+Vid lansering med 40 kunder kostar lösningen ungefär 367 kr i månaden. Det mesta är Container Apps på 319 kr, sedan ACR på 47,58 kr, medan lagringen bara kostar runt 1 kr. Om kundbasen tredubblas kostar det ungefär 370 kr, nästan samma, eftersom kostnaden styrs av att 2 repliker alltid är igång och inte av antalet kunder. Dyrast är Container Apps, runt 87 procent av totalen, eftersom 2 kopior av appen alltid är igång. Vid fyrdubblad trafik blir `GET /certificates` en flaskhals, eftersom den hämtar varje certifikat en och en. Dessutom kan appen inte skala över 5 repliker. Om en länk delas 10 000 gånger på en dag händer nästan ingenting, eftersom de första 2 miljoner anropen varje månad är gratis. Det kostar runt 0,04 kr i blob-läsningar. Skulle det bli miljoner kan vi cacha verifieringssvaret, eftersom ett certifikat aldrig ändras, till exempel med headern `Cache-Control: public, max-age=86400` eller med Azure Front Door framför `/verify/{uuid}`. Vi har räknat med aktivt pris, men replikerna är vilande så länge ingen använder dem, så i verkligheten blir den delen billigare än beräknat.
+
+## Designval
+
+| Beslut | Alternativ vi valde bort | Varför |
+|---|---|---|
+| Privata blobbar, verifiering via `/verify/{uuid}` | Publika blob-URL:er | Via API:t kan vi logga, returnera ett kontrollerat svar och spärra återkallade certifikat |
+| Managed Identity mot Storage och ACR | Connection string, ACR admin user | Ingen hemlighet finns som kan läcka eller behöver roteras |
+| Pipelinen deployar bara appen, Bicep körs separat | Bicep i pipelinen | Service connection klarar sig med Contributor, infrastruktur ändras sällan |
+| `az acr build` | `Docker@2` med egen registry-connection | Återanvänder samma federerade connection, ingen Docker behövs på agenten |
+| `minReplicas: 2`, autoskalning upp till 5 | Skala till noll | Ingen kallstart och en replik kvar om en kraschar, taket skyddar budgeten |
+| Standard LRS | ZRS eller GRS | Certifikat är små och billiga att återskapa, LRS räcker för lanseringen |
+| Parameterfiler för dev och prod | En mall med fasta värden | Samma mall, olika replikantal per miljö |
