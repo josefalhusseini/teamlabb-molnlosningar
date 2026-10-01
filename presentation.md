@@ -63,27 +63,49 @@ Talare: Josef. Gå igenom endpoints kort, betona att /verify är produkten. Unge
 
 ---
 
-## Arkitektur
+## Arkitektur: så kommer ny kod ut
 
 ```
- git push
-    │
-    ▼
- GitHub ──► Azure DevOps pipeline
-             1. Bygg   2. Test   3. az acr build   4. Deploy
-                                      │                 │
-                                      ▼                 ▼
-                                    ACR  ───pull───►  Container App (2 till 5 repliker)
-                                                        │         │
-                                                        │         └──► Log Analytics
-                                                        ▼
-                                                   Blob Storage (certifikat som JSON)
+git push till GitHub
+        ↓
+Azure DevOps pipeline startar
+        ↓
+1. Bygg          kompilerar koden
+        ↓
+2. Test          kör testerna
+        ↓
+3. az acr build  bygger en image, sparas i ACR som certify-api:46
+        ↓
+4. Deploy        säger åt Container Appen: kör certify-api:46
+        ↓
+Container Appen hämtar imagen från ACR och startar 2 kopior
 ```
 
-All infrastruktur definieras i **Bicep**, `infra/main.bicep`
+Misslyckas ett steg stannar pipelinen, och den gamla versionen fortsätter köra.
 
 <!--
-Talare: Hilal. Följ pilarna uppifrån och ner. Förklara att infrastrukturen deployas med Bicep och appen med pipelinen. Ungefär 1 minut.
+Talare: Hilal. Gå uppifrån och ner. Poängen: ACR är lagret för images, Container Appen är där appen körs. Deploy-steget skickar bara en order, själva imagen hämtas från ACR. Ungefär 1 minut.
+-->
+
+---
+
+## Arkitektur: när appen kör
+
+```
+          Kund / arbetsgivare
+                  ↓  HTTPS
+   Container App  (2 till 5 kopior av samma image)
+          ↓                          ↓
+    Blob Storage                Log Analytics
+  certifikaten som JSON           appens loggar
+```
+
+- Containrar minns ingenting, så certifikaten sparas i **Blob Storage** som alla kopior delar
+- Skapa certifikat: appen skriver en fil. Verifiera: appen letar efter filen
+- All infrastruktur är skriven i **Bicep**, `infra/main.bicep`
+
+<!--
+Talare: Hilal. Poängen: koden körs i Container Appen, datan ligger i Blob Storage. Infrastrukturen byggs med Bicep, appen uppdateras med pipelinen. Ungefär 1 minut.
 -->
 
 ---
@@ -212,7 +234,7 @@ Talare: Hilal tar punkt 1, Josef tar punkt 2. Ungefär 1 minut.
 
 ## Nästa steg
 
-- Fler tester, bland annat mot lagringen med Azurite  
+- Fler tester, bland annat mot lagringen med Azurite
 - Cache framför `/verify/{uuid}`
 - Application Insights med larm vid fel
 - Autentisering per kund i stället för en gemensam API-nyckel
