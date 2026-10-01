@@ -212,7 +212,7 @@ Talare: Hilal tar punkt 1, Josef tar punkt 2. Ungefär 1 minut.
 
 ## Nästa steg
 
-- Riktiga tester i pipelinen, test-steget finns men testar inget än
+- Fler tester, bland annat mot lagringen med Azurite  
 - Cache framför `/verify/{uuid}`
 - Application Insights med larm vid fel
 - Autentisering per kund i stället för en gemensam API-nyckel
